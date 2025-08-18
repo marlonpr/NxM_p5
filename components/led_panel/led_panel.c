@@ -20,52 +20,7 @@
 
 #define BIT_CLK (1 << PIN_CLK)
 #define BIT_LAT (1 << PIN_LAT)
-
-
-
-static inline void set_rgb_lines(uint8_t p1, uint8_t p2) {
-    uint32_t set_mask = 0;
-    uint32_t clr_mask = 0;
-
-    // Row 1
-    if (p1 & 0x01) set_mask |= BIT_R1; else clr_mask |= BIT_R1;
-    if (p1 & 0x02) set_mask |= BIT_G1; else clr_mask |= BIT_G1;
-    if (p1 & 0x04) set_mask |= BIT_B1; else clr_mask |= BIT_B1;
-
-    // Row 2
-    if (p2 & 0x01) set_mask |= BIT_R2; else clr_mask |= BIT_R2;
-    if (p2 & 0x02) set_mask |= BIT_G2; else clr_mask |= BIT_G2;
-    if (p2 & 0x04) set_mask |= BIT_B2; else clr_mask |= BIT_B2;
-
-    // Apply all changes at once
-    GPIO.out_w1ts = set_mask; // set bits high
-    GPIO.out_w1tc = clr_mask; // set bits low
-}
-
-static inline void set_row(uint8_t row)
-{
-    uint32_t set_mask = 0;
-    uint32_t clr_mask = 0;
-
-    if (row & 0x01) set_mask |= BIT_A; else clr_mask |= BIT_A;
-    if (row & 0x02) set_mask |= BIT_B; else clr_mask |= BIT_B;
-    if (row & 0x04) set_mask |= BIT_C; else clr_mask |= BIT_C;
-
-    GPIO.out_w1ts = set_mask; // set high
-    GPIO.out_w1tc = clr_mask; // set low
-}
-
-
-static inline void pulse_clk(void) {
-    GPIO.out_w1ts = BIT_CLK; // set high
-    GPIO.out_w1tc = BIT_CLK; // set low
-}
-
-static inline void pulse_lat(void) {
-    GPIO.out_w1ts = BIT_LAT; // set high
-    GPIO.out_w1tc = BIT_LAT; // set low
-}
-
+#define BIT_OE (1 << PIN_OE)
 
 
 void init_oe_pwm(void)
@@ -139,7 +94,7 @@ void init_pins(void) {
     uint64_t mask = (1ULL<<PIN_R1) | (1ULL<<PIN_G1) | (1ULL<<PIN_B1)
                   | (1ULL<<PIN_R2) | (1ULL<<PIN_G2) | (1ULL<<PIN_B2)
                   | (1ULL<<PIN_A)  | (1ULL<<PIN_B)  | (1ULL<<PIN_C)
-                  | (1ULL<<PIN_CLK)| (1ULL<<PIN_LAT);
+                  | (1ULL<<PIN_CLK)| (1ULL<<PIN_LAT)| (1ULL<<PIN_OE);
 
     gpio_config_t io_conf = {
         .pin_bit_mask = mask,
@@ -150,7 +105,7 @@ void init_pins(void) {
     };
     gpio_config(&io_conf);
 
-    //gpio_set_level(PIN_OE, 1);
+    gpio_set_level(PIN_OE, 1);
     gpio_set_level(PIN_LAT, 0);
     gpio_set_level(PIN_CLK, 0);
 }
@@ -212,15 +167,24 @@ void refresh_task(void *arg) {
     while (1) {
         for (int row = 0; row < scan_rows; row++) {
 
-
-                        //gpio_set_level(PIN_OE, 1);
+			GPIO.out_w1ts = BIT_OE; // set high
+    		
+			//gpio_set_level(PIN_OE, 1);
 			// Duty = max → PWM is always HIGH → OE stays HIGH → panel off
-			ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, 0);
-			ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
+			//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, 0);
+			//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
             
 			//esp_rom_delay_us(5);
 
-			set_row(row);
+			uint32_t set_mask = 0;
+		    uint32_t clr_mask = 0;
+		
+		    if (row & 0x01) set_mask |= BIT_A; else clr_mask |= BIT_A;
+		    if (row & 0x02) set_mask |= BIT_B; else clr_mask |= BIT_B;
+		    if (row & 0x04) set_mask |= BIT_C; else clr_mask |= BIT_C;
+		
+		    GPIO.out_w1ts = set_mask; // set high
+		    GPIO.out_w1tc = clr_mask; // set low
 
 
             for (int col = 0; col < total_cols; col++) {
@@ -228,6 +192,8 @@ void refresh_task(void *arg) {
                 int local_x        = col % PANEL_WIDTH;
                 int panel_in_chain = panel_index / 2;        // 0..(PHYS_PANELS-1)
                 int fb_x           = panel_in_chain * PANEL_WIDTH + local_x;
+				uint32_t set_mask = 0;
+    			uint32_t clr_mask = 0;
 
                 // Upper/lower half rows for this scan step
                 int y1 = (panel_index % 2) ? row : row + scan_rows;
@@ -239,17 +205,34 @@ void refresh_task(void *arg) {
                     if ((unsigned)y2 < (unsigned)PHY_HEIGHT) p2 = front_buf[y2][fb_x];
                 }
 
-				set_rgb_lines(p1, p2);
-				pulse_clk();
+				// Row 1
+			    if (p1 & 0x01) set_mask |= BIT_R1; else clr_mask |= BIT_R1;
+			    if (p1 & 0x02) set_mask |= BIT_G1; else clr_mask |= BIT_G1;
+			    if (p1 & 0x04) set_mask |= BIT_B1; else clr_mask |= BIT_B1;
+			
+			    // Row 2
+			    if (p2 & 0x01) set_mask |= BIT_R2; else clr_mask |= BIT_R2;
+			    if (p2 & 0x02) set_mask |= BIT_G2; else clr_mask |= BIT_G2;
+			    if (p2 & 0x04) set_mask |= BIT_B2; else clr_mask |= BIT_B2;
+			
+			    // Apply all changes at once
+			    GPIO.out_w1ts = set_mask; // set bits high
+			    GPIO.out_w1tc = clr_mask; // set bits low
+
+				GPIO.out_w1ts = BIT_CLK; // set high
+    			GPIO.out_w1tc = BIT_CLK; // set low
 
             }
-			pulse_lat();
+			GPIO.out_w1ts = BIT_LAT; // set high
+    		GPIO.out_w1tc = BIT_LAT; // set low
 
-            //gpio_set_level(PIN_OE, 0);
+            
+			GPIO.out_w1tc = BIT_OE; // set low
+			//gpio_set_level(PIN_OE, 0);
 			// Duty = 0 → PWM is always LOW → OE stays LOW → panel on
 			//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, (1 << OE_DUTY_RES) - 1);
 			//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
-			update_oe_duty();
+			//update_oe_duty();
 
 
             // Visible time per row; tune for brightness/ghosting
@@ -259,154 +242,57 @@ void refresh_task(void *arg) {
 }
 
 
-// Renders a 3x5 glyph scaled to 20x40 by x6,y8 with 1px left/right margins.
-// Colors are 1-bit channels per your driver (0/1). Replace with your color format if needed.
 
-static inline void draw_char_20x40(int x, int y, char c, int r, int g, int b)
-{
-    const uint8_t *rows = NULL;
+// set_pixel(x, y, r, g, b) is your existing function
+// VIRT_WIDTH, VIRT_HEIGHT are the virtual drawing dimensions
 
-    if (c >= '0' && c <= '9') {
-        rows = font3x5_digits[c - '0'];
-    } else if (c >= 'a' && c <= 'z') {
-        rows = font3x5_alpha[c - 'a'];
-    } else if (c >= 'A' && c <= 'Z') {
-        rows = font3x5_upper[c - 'A'];
-    } else {
-        switch(c) {
-            case '.': rows = font3x5_punct[0]; break;
-            case ',': rows = font3x5_punct[1]; break;
-            case ':': rows = font3x5_punct[2]; break;
-            case ';': rows = font3x5_punct[3]; break;
-            case '!': rows = font3x5_punct[4]; break;
-            case '?': rows = font3x5_punct[5]; break;
-            case '-': rows = font3x5_punct[6]; break;
-            case '+': rows = font3x5_punct[7]; break;
-            case '/': rows = font3x5_punct[8]; break;
-            case '\\':rows = font3x5_punct[9]; break;
-            default:  return;
-        }
-    }
+// ----------------- Draw a single character -----------------
+void draw_char(int x, int y, char c, int r, int g, int b) {
+    if (c < 32 || c > 126) c = '?';  // fallback
+    int index = c - 32;
 
-    // scale 3x5 → 20x40
-    const int scale_x = 6;
-    const int scale_y = 8;
-    const int margin_x = 1;
-    const int width = 3;
-    const int height = 5;
-
-    for (int ry = 0; ry < height; ry++) {
-        uint8_t bits = rows[ry] & 0x07;
-        for (int rx = 0; rx < width; rx++) {
-            if (bits & (1 << (width - 1 - rx))) {
-                int px = x + margin_x + rx * scale_x;
-                int py = y + ry * scale_y;
-                for (int dy = 0; dy < scale_y; dy++) {
-                    for (int dx = 0; dx < scale_x; dx++) {
-                        set_pixel(px + dx, py + dy, r, g, b);
-                    }
+    for (int row = 0; row < FONT_HEIGHT; row++) {
+        for (int col = 0; col < FONT_WIDTH; col++) {
+            if (font20x40[index][row][col]) {
+                int px = x + col;
+                int py = y + row;
+                if (px >= 0 && px < VIRT_WIDTH && py >= 0 && py < VIRT_HEIGHT) {
+                    set_pixel(px, py, r, g, b);
                 }
             }
         }
     }
 }
 
-
-
-void draw_text_20x40(int x, int y, const char *s, int r, int g, int b)
-{
-    int cx = x;
-    while (*s) {
-        if (*s == '\n') {
-            y  += 40;
-            cx  = x;
-        } else {
-            draw_char_20x40(cx, y, *s, r, g, b);
-            cx += 20; // fixed advance per glyph
-        }
-        s++;
+// ----------------- Draw a string -----------------
+void draw_text(int x, int y, const char *text, int r, int g, int b) {
+    int cursor_x = x;
+    while (*text) {
+        draw_char(cursor_x, y, *text, r, g, b);
+        cursor_x += FONT_WIDTH;  // advance cursor by font width
+        text++;
     }
 }
 
-static inline void color_code_to_rgb(uint8_t code, int *r, int *g, int *b)
-{
-    *r = (code & 0x4) ? 1 : 0;
-    *g = (code & 0x2) ? 1 : 0;
-    *b = (code & 0x1) ? 1 : 0;
-}
-
-
-void scroll_text_20x40(const char *text, int y, int r, int g, int b, int speed_ms) {
+// ----------------- Scroll text horizontally -----------------
+void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms) {
+    // compute total text width
     int len = strlen(text);
-    if (len <= 0) return;
+    int text_width = len * FONT_WIDTH;
 
-    const int glyph_width = 20;   // 3x5 scaled to 20x40
-    const int text_width = len * glyph_width;
+    // temporary buffer for one row of virtual pixels (optional)
+    for (int scroll_x = 0; scroll_x < text_width + VIRT_WIDTH; scroll_x++) {
+        clear_back_buffer();  // clear virtual framebuffer
 
-    // Scroll loop
-    for (int scroll_x = -VIRT_WIDTH; scroll_x < text_width; scroll_x++) {
-        clear_back_buffer();
-
-        // Draw each character that overlaps the visible window
-        for (int i = 0; i < len; i++) {
-            int char_x = i * glyph_width - scroll_x;
-
-            // Skip characters completely offscreen
-            if (char_x + glyph_width < 0 || char_x >= VIRT_WIDTH) continue;
-
-            char c = text[i];
-            const uint8_t *rows = NULL;
-
-            if (c >= '0' && c <= '9')       rows = font3x5_digits[c - '0'];
-            else if (c >= 'a' && c <= 'z')  rows = font3x5_alpha[c - 'a'];
-            else if (c >= 'A' && c <= 'Z')  rows = font3x5_upper[c - 'A'];
-            else { // punctuation
-                switch(c) {
-                    case '.': rows = font3x5_punct[0]; break;
-                    case ',': rows = font3x5_punct[1]; break;
-                    case ':': rows = font3x5_punct[2]; break;
-                    case ';': rows = font3x5_punct[3]; break;
-                    case '!': rows = font3x5_punct[4]; break;
-                    case '?': rows = font3x5_punct[5]; break;
-                    case '-': rows = font3x5_punct[6]; break;
-                    case '+': rows = font3x5_punct[7]; break;
-                    case '/': rows = font3x5_punct[8]; break;
-                    case '\\':rows = font3x5_punct[9]; break;
-                    default:  rows = NULL; break;
-                }
-            }
-
-            if (!rows) continue;
-
-            // Draw 20x40 scaled character
-            const int scale_x = 6;
-            const int scale_y = 8;
-            const int margin_x = 1;
-
-            for (int ry=0; ry<5; ry++) {
-                uint8_t bits = rows[ry] & 0x07;
-                for (int rx=0; rx<3; rx++) {
-                    if (bits & (1 << (2-rx))) {
-                        int px0 = char_x + margin_x + rx*scale_x;
-                        int py0 = y + ry*scale_y;
-
-                        for (int dy=0; dy<scale_y; dy++) {
-                            int py = py0 + dy;
-                            if (py < 0 || py >= VIRT_HEIGHT) continue;
-
-                            for (int dx=0; dx<scale_x; dx++) {
-                                int px = px0 + dx;
-                                if (px < 0 || px >= VIRT_WIDTH) continue;
-                                set_pixel(px, py, r, g, b);
-                            }
-                        }
-                    }
-                }
-            }
+        int cursor_x = VIRT_WIDTH - scroll_x;  // starting position
+        const char *p = text;
+        while (*p) {
+            draw_char(cursor_x, y, *p, r, g, b);
+            cursor_x += FONT_WIDTH;
+            p++;
         }
 
-        swap_buffers();
+        swap_buffers();  // show frame
         vTaskDelay(pdMS_TO_TICKS(speed_ms));
     }
 }
-

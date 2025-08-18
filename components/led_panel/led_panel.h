@@ -69,15 +69,13 @@ void set_global_brightness(uint8_t level);
 void refresh_task(void *arg);
 void clear_back_buffer(void);
 void swap_buffers(void);
-void draw_text_20x40(int x, int y, const char *s, int r, int g, int b);
+void draw_text(int x, int y, const char *s, int r, int g, int b);
 //void scroll_text_update(scroll_text_t *scroll);
 
-void scroll_text_20x40(const char *text, int y, int r, int g, int b, int speed_ms);
+void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms);
 
 
-
-
-
+void draw_char(int x, int y, char c, int r, int g, int b);
 
 
 
