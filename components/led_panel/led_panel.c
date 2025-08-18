@@ -264,15 +264,16 @@ void draw_char(int x, int y, char c, int r, int g, int b) {
     }
 }
 
-// ----------------- Draw a string -----------------
+// ----------------- Draw a string with 1-pixel spacing -----------------
 void draw_text(int x, int y, const char *text, int r, int g, int b) {
     int cursor_x = x;
     while (*text) {
         draw_char(cursor_x, y, *text, r, g, b);
-        cursor_x += FONT_WIDTH;  // advance cursor by font width
+        cursor_x += FONT_WIDTH + 1;  // advance cursor by font width + 1 pixel spacing
         text++;
     }
 }
+
 
 // ----------------- Scroll text horizontally -----------------
 void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms) {
@@ -281,14 +282,14 @@ void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms) {
     int text_width = len * FONT_WIDTH;
 
     // temporary buffer for one row of virtual pixels (optional)
-    for (int scroll_x = 0; scroll_x < text_width + VIRT_WIDTH; scroll_x++) {
+    for (int scroll_x = 0; scroll_x < text_width + VIRT_WIDTH+2; scroll_x++) {
         clear_back_buffer();  // clear virtual framebuffer
 
         int cursor_x = VIRT_WIDTH - scroll_x;  // starting position
         const char *p = text;
         while (*p) {
             draw_char(cursor_x, y, *p, r, g, b);
-            cursor_x += FONT_WIDTH;
+            cursor_x += FONT_WIDTH + 1; // advance cursor by font width + 1 pixel spacing
             p++;
         }
 
