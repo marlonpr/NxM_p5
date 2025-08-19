@@ -29,6 +29,8 @@ typedef enum {
     DISPLAY_DATE,
 	DISPLAY_TEMPERATURE,
 	DISPLAY_LOGO,
+	DISPLAY_LOGO2,
+	DISPLAY_LOGO3,
     // Add more modes here later, e.g., DISPLAY_TEMPERATURE
 } display_mode_t;
 
@@ -58,7 +60,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                 snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour12, time->minute, time->second);
             }
 
-            draw_text(8, 8, buf, 225, 170, 54); // green
+            draw_text(8, 8, buf, 180, 0, 115); // green
             break;
         }
         case DISPLAY_DATE: {
@@ -81,11 +83,19 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
 		    } else {
 		        snprintf(buf, sizeof(buf), "TEMP ERROR");
 		    }
-		    draw_text(66, 8, buf, 255, 80, 0);
+		    draw_text(66, 8, buf, 147, 47, 103);
 		    break;
 		}
 		case DISPLAY_LOGO: {
 			draw_bitmap_rgb(64,16,logo_bitmap, LOGO_WIDTH, LOGO_HEIGHT);
+			break;
+		}
+		case DISPLAY_LOGO2: {
+			draw_bitmap_rgb(64,16,logo2_bitmap, LOGO_WIDTH, LOGO_HEIGHT);
+			break;
+		}
+		case DISPLAY_LOGO3: {
+			draw_bitmap_rgb(64,16,logo3_bitmap, LOGO_WIDTH, LOGO_HEIGHT);
 			break;
 		}
 
@@ -98,7 +108,7 @@ void drawing_task(void *arg)
 {
     ds3231_dev_t *rtc = (ds3231_dev_t *)arg;
     display_mode_t mode = DISPLAY_TIME;
-    const int mode_interval_s = 5; // seconds per mode
+    const int mode_interval_s = 50; // seconds per mode
 
     while (1) {
         ds3231_time_t now;
@@ -121,17 +131,26 @@ void drawing_task(void *arg)
 
             case DISPLAY_TEMPERATURE:
                 draw_display(DISPLAY_TEMPERATURE, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 1000));
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 500));
                 break;
             case DISPLAY_LOGO:
                 draw_display(DISPLAY_LOGO, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 1000));
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
+                break;
+            case DISPLAY_LOGO2:
+                draw_display(DISPLAY_LOGO2, &now);
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
+                break;
+            case DISPLAY_LOGO3:
+                draw_display(DISPLAY_LOGO3, &now);
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
                 break;
         }
 
+
         // switch to next mode
         mode++;
-        if (mode > DISPLAY_LOGO) mode = DISPLAY_TIME;
+        if (mode > DISPLAY_LOGO3) mode = DISPLAY_TIME;
     }
 }
 
@@ -143,8 +162,9 @@ void app_main(void)
 {
     init_pins();
 
-	//init_oe_pwm();
-	//set_global_brightness(255); //0 - 255
+init_oe_pwm();           // initialize OE PWM
+set_global_brightness(100);  // 50% brightness
+
 
     ds3231_dev_t rtc;
     ESP_ERROR_CHECK(init_ds3231(&rtc));

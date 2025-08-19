@@ -25,6 +25,61 @@
 #define BIT_OE (1 << PIN_OE)
 
 
+#define OE_DUTY_RES       LEDC_TIMER_6_BIT      // 6-bit PWM
+#define OE_MAX_DUTY       ((1 << OE_DUTY_RES)-1)  // 63
+#define OE_FREQ_HZ        1000000               // 1 MHz safe for 6-bit
+#define OE_SPEED_MODE     LEDC_HIGH_SPEED_MODE
+#define OE_CHANNEL        LEDC_CHANNEL_0
+
+static volatile uint8_t global_brightness = 100;  // 0..100%
+
+// Initialize OE PWM
+void init_oe_pwm(void)
+{
+    ledc_timer_config_t timer_conf = {
+        .speed_mode      = OE_SPEED_MODE,
+        .duty_resolution = OE_DUTY_RES,
+        .timer_num       = LEDC_TIMER_0,
+        .freq_hz         = OE_FREQ_HZ,
+        .clk_cfg         = LEDC_AUTO_CLK
+    };
+    ESP_ERROR_CHECK(ledc_timer_config(&timer_conf));
+
+    ledc_channel_config_t chan_conf = {
+        .speed_mode     = OE_SPEED_MODE,
+        .channel        = OE_CHANNEL,
+        .timer_sel      = LEDC_TIMER_0,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = PIN_OE,
+        .duty           = 0,               // start OFF
+        .hpoint         = 0,
+        .flags = {
+            .output_invert = 1             // invert OE
+        }
+    };
+    ESP_ERROR_CHECK(ledc_channel_config(&chan_conf));
+}
+
+// Update OE duty according to global brightness (0-100%)
+static void update_oe_duty(void)
+{
+    uint32_t duty = (global_brightness * OE_MAX_DUTY) / 100; // scale 0..100 -> 0..63
+    ESP_ERROR_CHECK(ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL));
+}
+
+// Set brightness as percentage (0-100)
+void set_global_brightness(uint8_t percent)
+{
+    if (percent > 100) percent = 100;
+    global_brightness = percent;
+    update_oe_duty();
+}
+
+
+
+
+
 // Gamma corrected values for 3-bit PWM (0..7)
 const uint8_t gamma_table[256] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -60,7 +115,7 @@ void init_pins(void) {
     uint64_t mask = (1ULL<<PIN_R1) | (1ULL<<PIN_G1) | (1ULL<<PIN_B1)
                   | (1ULL<<PIN_R2) | (1ULL<<PIN_G2) | (1ULL<<PIN_B2)
                   | (1ULL<<PIN_A)  | (1ULL<<PIN_B)  | (1ULL<<PIN_C)
-                  | (1ULL<<PIN_CLK)| (1ULL<<PIN_LAT)| (1ULL<<PIN_OE);
+                  | (1ULL<<PIN_CLK)| (1ULL<<PIN_LAT);
 
     gpio_config_t io_conf = {
         .pin_bit_mask = mask,
@@ -71,7 +126,7 @@ void init_pins(void) {
     };
     gpio_config(&io_conf);
 
-    gpio_set_level(PIN_OE, 1);
+    //gpio_set_level(PIN_OE, 1);
     gpio_set_level(PIN_LAT, 0);
     gpio_set_level(PIN_CLK, 0);
 }
@@ -147,7 +202,16 @@ void refresh_task(void *arg) {
             for (int row = 0; row < scan_rows; row++) {
 
                 // OE off while we change address / shift
-                GPIO.out_w1ts = BIT_OE;
+                //GPIO.out_w1ts = BIT_OE;
+
+
+				//gpio_set_level(PIN_OE, 1);
+				// Duty = max → PWM is always HIGH → OE stays HIGH → panel off
+				ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, 0);
+				ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
+
+
+
 
                 // Set row address ABC
                 uint32_t set_mask = 0, clr_mask = 0;
@@ -199,11 +263,22 @@ void refresh_task(void *arg) {
                 GPIO.out_w1tc = BIT_LAT;
 
                 // Enable for weighted time slice
-                GPIO.out_w1tc = BIT_OE;           // OE low = on
+                //GPIO.out_w1tc = BIT_OE;           // OE low = on
+
+				//gpio_set_level(PIN_OE, 0);
+				// Duty = 0 → PWM is always LOW → OE stays LOW → panel on
+				//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, (1 << OE_DUTY_RES) - 1);
+				//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
+				update_oe_duty();
+
+
+
+
+
+
                 for (int t = 0; t < weight; ++t) {
                     esp_rom_delay_us(BASE_US);    // very short unit, e.g. 20 µs
                 }
-                GPIO.out_w1ts = BIT_OE;           // OE high = off
             }
         }
     }
@@ -291,63 +366,6 @@ void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h) {
 
 
 
-
-void init_oe_pwm(void)
-{
-    // Configure a high-speed LEDC timer for OE pin
-    ledc_timer_config_t timer_conf = {
-        .speed_mode       = LEDC_HIGH_SPEED_MODE,
-        .duty_resolution  = LEDC_TIMER_6_BIT,
-        .timer_num        = LEDC_TIMER_0,
-        .freq_hz          = 1000000,        // 1 MHz
-        .clk_cfg          = LEDC_AUTO_CLK
-    };
-    ESP_ERROR_CHECK(ledc_timer_config(&timer_conf));
-
-    // Map OE pin into that PWM channel
-    ledc_channel_config_t chan_conf = {
-        .speed_mode     = LEDC_HIGH_SPEED_MODE,
-        .channel        = LEDC_CHANNEL_0,
-        .timer_sel      = LEDC_TIMER_0,
-        .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = PIN_OE,
-        .duty           = 0,                // start OFF
-        .hpoint         = 0,
-		.flags = {
-            .output_invert = 1   // <-- invert the PWM signal
-        }
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&chan_conf));
-}
-
-
-
-
-// Global brightness in percent (0–100)
-static volatile uint8_t global_brightness = 255;
-
-// Call this once after your LEDC timer/channel have been initialized
-// to set initial duty according to global_brightness.
-static void update_oe_duty(void)
-{
-    const uint32_t max_duty = (1 << OE_DUTY_RES) - 1;         // 255
-    uint32_t duty = (max_duty * global_brightness) / 255;     // scale 0–255
-    // Apply it immediately
-    ESP_ERROR_CHECK( ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, duty) );
-    ESP_ERROR_CHECK( ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL) );
-}
-
-// Call this from wherever you want to change brightness (e.g. CLI, button handler)
-void set_global_brightness(uint8_t level)
-{
-    if (level > 255) {
-        level = 255;
-    }
-    global_brightness = level;
-    update_oe_duty();
-}
-
-
 //---------------------------------------------//-------------------------------------------
 
 
@@ -366,4 +384,3 @@ void set_global_brightness(uint8_t level)
 			//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, (1 << OE_DUTY_RES) - 1);
 			//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
 			//update_oe_duty();
-

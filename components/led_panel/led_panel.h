@@ -33,15 +33,8 @@
 #define PIN_B   GPIO_NUM_26
 #define PIN_C   GPIO_NUM_23
 
-//-------------------------------------------//-------------------------------------------
 
 
-// Choose a high-speed channel/timer so duty updates are as fast as possible
-#define OE_SPEED_MODE    LEDC_HIGH_SPEED_MODE
-#define OE_TIMER_NUM     LEDC_TIMER_0
-#define OE_CHANNEL       LEDC_CHANNEL_0
-#define OE_DUTY_RES      LEDC_TIMER_8_BIT    // 256 steps
-#define OE_FREQUENCY_HZ  1000000             // 1 MHz PWM freq
 
 // ------------ Pixel + double buffers -------------
 // Packed RGB: bit0=R, bit1=G, bit2=B
@@ -56,7 +49,7 @@ typedef uint8_t pix_t;
 
 // ===== Brightness / PWM config =====
 #define COLOR_DEPTH   3              // 3 bits per color (0..7). You can try 4 later.
-#define BASE_US       20             // base OE time per LSB slice (tune 15–30us)
+#define BASE_US       30             // base OE time per LSB slice (tune 15–30us)
 
 
 // Plane buffers: same physical size, but one per PWM plane
@@ -96,6 +89,9 @@ void init_planes(void);
 
 void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h);
 
+
+
+void set_global_brightness_pct(uint8_t percent);
 
 
 
