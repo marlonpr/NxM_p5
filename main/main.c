@@ -1,9 +1,7 @@
 #include "ds18b20.h"
 #include "led_panel.h"
 #include "ds3231.h"
-#include "esp_log.h"
-
-
+#include "logo.h"
 
 static ds18b20_t sensor;
 
@@ -30,6 +28,7 @@ typedef enum {
     DISPLAY_TIME = 0,
     DISPLAY_DATE,
 	DISPLAY_TEMPERATURE,
+	DISPLAY_LOGO,
     // Add more modes here later, e.g., DISPLAY_TEMPERATURE
 } display_mode_t;
 
@@ -59,10 +58,9 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                 snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour12, time->minute, time->second);
             }
 
-            draw_text(8, 8, buf, 1, 1, 1); // green
+            draw_text(8, 8, buf, 225, 170, 54); // green
             break;
         }
-
         case DISPLAY_DATE: {
             int weekday_index = (time->day_of_week - 1) % 7;
 
@@ -73,11 +71,9 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                      meses[time->month - 1],
                      time->year);
 
-			scroll_text(buf, 8, 1, 1, 1, 15);
+			scroll_text(buf, 8, 0, 255, 255, 15);
             break;
         }
-
-        // Add more cases here for future screens
 		case DISPLAY_TEMPERATURE: {
 		    char buf[32];
 		    if (temp_valid) {
@@ -85,8 +81,12 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
 		    } else {
 		        snprintf(buf, sizeof(buf), "TEMP ERROR");
 		    }
-		    draw_text(66, 8, buf, 1, 1, 1);
+		    draw_text(66, 8, buf, 255, 80, 0);
 		    break;
+		}
+		case DISPLAY_LOGO: {
+			draw_bitmap_rgb(64,16,logo_bitmap, LOGO_WIDTH, LOGO_HEIGHT);
+			break;
 		}
 
     }
@@ -123,11 +123,15 @@ void drawing_task(void *arg)
                 draw_display(DISPLAY_TEMPERATURE, &now);
                 vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 1000));
                 break;
+            case DISPLAY_LOGO:
+                draw_display(DISPLAY_LOGO, &now);
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 1000));
+                break;
         }
 
         // switch to next mode
         mode++;
-        if (mode > DISPLAY_TEMPERATURE) mode = DISPLAY_TIME;
+        if (mode > DISPLAY_LOGO) mode = DISPLAY_TIME;
     }
 }
 
@@ -155,6 +159,8 @@ void app_main(void)
 		ds3231_time_t set_time = {2025, 8, 18, 13, 52, 0, 2};
     	ESP_ERROR_CHECK(ds3231_set_time(&rtc, &set_time));
 	}
+
+	init_planes();
 
     // Clear both buffers first time
     memset((void*)fbA, 0, sizeof(fbA));

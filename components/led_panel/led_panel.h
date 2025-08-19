@@ -48,11 +48,25 @@
 typedef uint8_t pix_t;
 
 // Two physical-layout framebuffers: [y][x] = 32 x (64*PHYS_PANELS)
-static pix_t fbA[PHY_HEIGHT][PHY_WIDTH];
-static pix_t fbB[PHY_HEIGHT][PHY_WIDTH];
+//static pix_t fbA[PHY_HEIGHT][PHY_WIDTH];
+//static pix_t fbB[PHY_HEIGHT][PHY_WIDTH];
 
-static volatile pix_t (*front_buf)[PHY_WIDTH] = fbA; // scanned by refresh task
-static volatile pix_t (*back_buf)[PHY_WIDTH]  = fbB; // drawn by your code
+//static volatile pix_t (*front_buf)[PHY_WIDTH] = fbA; // scanned by refresh task
+//static volatile pix_t (*back_buf)[PHY_WIDTH]  = fbB; // drawn by your code
+
+// ===== Brightness / PWM config =====
+#define COLOR_DEPTH   3              // 3 bits per color (0..7). You can try 4 later.
+#define BASE_US       20             // base OE time per LSB slice (tune 15–30us)
+
+
+// Plane buffers: same physical size, but one per PWM plane
+// Each cell packs R,G,B bits like your old buffer: bit0=R, bit1=G, bit2=B
+static uint8_t (*front_planes[COLOR_DEPTH])[PHY_WIDTH];
+static uint8_t (*back_planes [COLOR_DEPTH])[PHY_WIDTH];
+
+// Allocate concrete storage (A/B for double buffering)
+static uint8_t fbA[COLOR_DEPTH][PHY_HEIGHT][PHY_WIDTH];
+static uint8_t fbB[COLOR_DEPTH][PHY_HEIGHT][PHY_WIDTH];
 
 typedef struct {
     const char *text;   // text to scroll (can include '\n' for multiple lines)
@@ -76,6 +90,11 @@ void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms);
 
 
 void draw_char(int x, int y, char c, int r, int g, int b);
+
+
+void init_planes(void);
+
+void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h);
 
 
 
