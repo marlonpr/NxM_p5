@@ -69,6 +69,9 @@ static uint8_t (*back_planes [COLOR_DEPTH])[PHY_WIDTH];
 static uint8_t fbA[COLOR_DEPTH][PHY_HEIGHT][PHY_WIDTH];
 static uint8_t fbB[COLOR_DEPTH][PHY_HEIGHT][PHY_WIDTH];
 
+extern bool stop_flag;
+
+
 typedef struct {
     const char *text;   // text to scroll (can include '\n' for multiple lines)
     int  pos_x;         // current horizontal offset in pixels

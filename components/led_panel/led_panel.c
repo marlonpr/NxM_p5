@@ -293,7 +293,8 @@ void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms) {
             p++;
         }
 
-        swap_buffers();                     // atomic plane swap
+        swap_buffers();
+		if (stop_flag) break;   // condition to exit early                     // atomic plane swap
         vTaskDelay(pdMS_TO_TICKS(speed_ms));
     }
 }

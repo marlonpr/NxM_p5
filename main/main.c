@@ -18,6 +18,10 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 
+bool stop_flag = false;
+
+
+
 void init_nvs_brightness()
 {
     esp_err_t ret = nvs_flash_init();
@@ -132,7 +136,10 @@ static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
     switch (menu_state)
     {
         case MENU_IDLE:
-            if (btn == BTN_MENU) menu_state = MENU_BRIGHTNESS;
+            if (btn == BTN_MENU) {
+				menu_state = MENU_BRIGHTNESS;
+				stop_flag = true;
+			}
             break;
 
         case MENU_BRIGHTNESS:
@@ -176,6 +183,7 @@ static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
 		        ESP_ERROR_CHECK(ds3231_set_time(rtc, &tmp_time));
 				save_brightness(brightness_level);  // <--- save here
 		        menu_state = MENU_IDLE;
+				stop_flag = false;
 		    }
 		    break;
     }
@@ -354,27 +362,27 @@ void drawing_task(void *arg)
             {
                 case MENU_BRIGHTNESS:
                     snprintf(buf, sizeof(buf), "BRILLO:%d", brightness_level);
-                    draw_text(3, 8, buf, 255, 255, 255);
+                    draw_text(3, 8, buf, 255, 0, 0);
                     break;
                 case MENU_HOUR:
                     snprintf(buf, sizeof(buf), "HORA:%02d", tmp_time.hour);
-                    draw_text(0, 8, buf, 255, 255, 255);
+                    draw_text(8, 8, buf, 255, 0, 0);
                     break;
                 case MENU_MINUTE:
                     snprintf(buf, sizeof(buf), "MINUTO:%02d", tmp_time.minute);
-                    draw_text(0, 8, buf, 255, 255, 255);
+                    draw_text(2, 8, buf, 255, 0, 0);
                     break;
                 case MENU_DAY:
                     snprintf(buf, sizeof(buf), "DIA:%02d", tmp_time.day);
-                    draw_text(0, 8, buf, 255, 255, 255);
+                    draw_text(15, 8, buf, 255, 0, 0);
                     break;
                 case MENU_MONTH:
                     snprintf(buf, sizeof(buf), "MES:%02d", tmp_time.month);
-                    draw_text(0, 8, buf, 255, 255, 255);
+                    draw_text(15, 8, buf, 255, 0, 0);
                     break;
                 case MENU_YEAR:
-                    snprintf(buf, sizeof(buf), "YEAR:%04d", tmp_time.year);
-                    draw_text(0, 8, buf, 255, 255, 255);
+                    snprintf(buf, sizeof(buf), "A:%04d", tmp_time.year);
+                    draw_text(8, 8, buf, 255, 0, 0);
                     break;
                 default: break;
             }
@@ -395,7 +403,15 @@ void drawing_task(void *arg)
                 {
                     ESP_ERROR_CHECK(ds3231_get_time(rtc, &now));
                     draw_display(DISPLAY_TIME, &now);
-                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    //vTaskDelay(pdMS_TO_TICKS(1000));
+
+					TickType_t delay_ms = 1000;
+					TickType_t elapsed = 0;
+					while (elapsed < delay_ms) {
+					    if (stop_flag) break;   // condition to exit early
+					    vTaskDelay(pdMS_TO_TICKS(10));
+					    elapsed += 10;
+					}
                 }
                 break;
 
@@ -405,22 +421,70 @@ void drawing_task(void *arg)
 
             case DISPLAY_TEMPERATURE:
                 draw_display(DISPLAY_TEMPERATURE, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 500));
+                //vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 500));
+                for (int i = 0; i < mode_interval_s; i++) 
+                {
+                    //vTaskDelay(pdMS_TO_TICKS(1000));
+
+					TickType_t delay_ms = 500;
+					TickType_t elapsed = 0;
+					while (elapsed < delay_ms) {
+					    if (stop_flag) break;   // condition to exit early
+					    vTaskDelay(pdMS_TO_TICKS(10));
+					    elapsed += 10;
+					}
+                }
                 break;
 
             case DISPLAY_LOGO:
                 draw_display(DISPLAY_LOGO, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
+                //vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
+                for (int i = 0; i < mode_interval_s; i++) 
+                {
+                    //vTaskDelay(pdMS_TO_TICKS(1000));
+
+					TickType_t delay_ms = 200;
+					TickType_t elapsed = 0;
+					while (elapsed < delay_ms) {
+					    if (stop_flag) break;   // condition to exit early
+					    vTaskDelay(pdMS_TO_TICKS(10));
+					    elapsed += 10;
+					}
+                }
                 break;
 
             case DISPLAY_LOGO2:
                 draw_display(DISPLAY_LOGO2, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
+                //vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
+                for (int i = 0; i < mode_interval_s; i++) 
+                {
+                    //vTaskDelay(pdMS_TO_TICKS(1000));
+
+					TickType_t delay_ms = 200;
+					TickType_t elapsed = 0;
+					while (elapsed < delay_ms) {
+					    if (stop_flag) break;   // condition to exit early
+					    vTaskDelay(pdMS_TO_TICKS(10));
+					    elapsed += 10;
+					}
+                }
                 break;
 
             case DISPLAY_LOGO3:
                 draw_display(DISPLAY_LOGO3, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
+                //vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
+                for (int i = 0; i < mode_interval_s; i++) 
+                {
+                    //vTaskDelay(pdMS_TO_TICKS(1000));
+
+					TickType_t delay_ms = 200;
+					TickType_t elapsed = 0;
+					while (elapsed < delay_ms) {
+					    if (stop_flag) break;   // condition to exit early
+					    vTaskDelay(pdMS_TO_TICKS(10));
+					    elapsed += 10;
+					}
+                }
                 break;
         }
 
@@ -463,6 +527,8 @@ void app_main(void)
     memset((void*)fbA, 0, sizeof(fbA));
     memset((void*)fbB, 0, sizeof(fbB));
 
+	init_buttons();
+
     // Start refresh task (pin-driving) on core 0
 	xTaskCreatePinnedToCore(refresh_task, "refresh_task", 2048, NULL, 1, NULL, 0);
 
@@ -470,8 +536,7 @@ void app_main(void)
 	
 	xTaskCreatePinnedToCore(temp_task,      "TempTask",      1024, NULL, 2, NULL, 1);
 
-init_buttons();
-xTaskCreatePinnedToCore(menu_task, "MenuTask", 4096, &rtc, 2, NULL, 1);
+	xTaskCreatePinnedToCore(menu_task, "MenuTask", 4096, &rtc, 2, NULL, 1);
 
 
     while (true) 
