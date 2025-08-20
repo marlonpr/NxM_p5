@@ -3,6 +3,243 @@
 #include "ds3231.h"
 #include "logo.h"
 
+#include "freertos/queue.h"
+#include "driver/gpio.h"
+
+#define DEBOUNCE_MS    500      // minimum time between presses
+#define REPEAT_DELAY   500     // initial delay before repeating
+#define REPEAT_RATE    500    // repeat interval while holding
+
+
+#define PIN_MENU    GPIO_NUM_33
+#define PIN_UP      GPIO_NUM_32
+#define PIN_DOWN    GPIO_NUM_16
+
+#include "nvs_flash.h"
+#include "nvs.h"
+
+void init_nvs_brightness()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+}
+
+void save_brightness(uint8_t level)
+{
+    nvs_handle_t nvs_handle;
+    ESP_ERROR_CHECK(nvs_open("settings", NVS_READWRITE, &nvs_handle));
+    ESP_ERROR_CHECK(nvs_set_u8(nvs_handle, "brightness", level));
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+    nvs_close(nvs_handle);
+}
+
+uint8_t load_brightness()
+{
+    nvs_handle_t nvs_handle;
+    uint8_t level = 10; // default 10 if not set
+
+    if (nvs_open("settings", NVS_READONLY, &nvs_handle) == ESP_OK) {
+        nvs_get_u8(nvs_handle, "brightness", &level);
+        nvs_close(nvs_handle);
+    }
+
+    return level;
+}
+
+
+// Return 1=Sunday ... 7=Saturday to match DS3231
+static int calculate_weekday(int day, int month, int year)
+{
+    if (month < 3) {
+        month += 12;
+        year--;
+    }
+    int K = year % 100;
+    int J = year / 100;
+    int h = (day + 13*(month + 1)/5 + K + K/4 + J/4 + 5*J) % 7;
+    // Zeller's: 0=Saturday, 1=Sunday, ..., 6=Friday
+    int d = ((h + 6) % 7) + 1; // 1=Sunday ... 7=Saturday
+    return d;
+}
+
+
+
+volatile bool menu_active = false;
+
+
+typedef enum {
+    BTN_MENU,
+    BTN_UP,
+    BTN_DOWN
+} button_t;
+
+static QueueHandle_t button_queue;
+
+static void IRAM_ATTR button_isr_handler(void* arg)
+{
+    button_t btn = (button_t)(uint32_t)arg;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xQueueSendFromISR(button_queue, &btn, &xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
+}
+
+
+static void init_buttons(void)
+{
+    gpio_config_t io_conf = {};
+    io_conf.pin_bit_mask = (1ULL << PIN_MENU) | (1ULL << PIN_UP) | (1ULL << PIN_DOWN);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;  // enable internal pull-up
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;    // trigger on press (falling edge)
+    gpio_config(&io_conf);
+
+    // Create queue
+    button_queue = xQueueCreate(10, sizeof(button_t));
+
+    // Install ISR service
+    gpio_install_isr_service(0);
+
+    // Add ISR handlers
+    gpio_isr_handler_add(PIN_MENU, button_isr_handler, (void*)(uint32_t)BTN_MENU);
+    gpio_isr_handler_add(PIN_UP,   button_isr_handler, (void*)(uint32_t)BTN_UP);
+    gpio_isr_handler_add(PIN_DOWN, button_isr_handler, (void*)(uint32_t)BTN_DOWN);
+}
+
+
+
+
+typedef enum {
+    MENU_IDLE,
+    MENU_BRIGHTNESS,
+    MENU_HOUR,
+    MENU_MINUTE,
+    MENU_DAY,
+    MENU_MONTH,
+    MENU_YEAR
+} menu_state_t;
+
+static menu_state_t menu_state = MENU_IDLE;
+
+static int brightness_level = 5; // 1–10
+static ds3231_time_t tmp_time;   // temporary time editing
+
+static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
+{
+    switch (menu_state)
+    {
+        case MENU_IDLE:
+            if (btn == BTN_MENU) menu_state = MENU_BRIGHTNESS;
+            break;
+
+        case MENU_BRIGHTNESS:
+            if (btn == BTN_UP && brightness_level < 10) brightness_level++;
+            if (btn == BTN_DOWN && brightness_level > 1) brightness_level--;
+            set_global_brightness(brightness_level * 10);
+            if (btn == BTN_MENU) menu_state = MENU_HOUR;
+            break;
+
+        case MENU_HOUR:
+            if (btn == BTN_UP) tmp_time.hour = (tmp_time.hour + 1) % 24;
+            if (btn == BTN_DOWN) tmp_time.hour = (tmp_time.hour + 23) % 24;
+            if (btn == BTN_MENU) menu_state = MENU_MINUTE;
+            break;
+
+        case MENU_MINUTE:
+            if (btn == BTN_UP) tmp_time.minute = (tmp_time.minute + 1) % 60;
+            if (btn == BTN_DOWN) tmp_time.minute = (tmp_time.minute + 59) % 60;
+            if (btn == BTN_MENU) menu_state = MENU_DAY;
+            break;
+
+		case MENU_DAY:
+		    if (btn == BTN_UP) tmp_time.day = (tmp_time.day % 31) + 1;
+		    if (btn == BTN_DOWN) tmp_time.day = ((tmp_time.day + 29) % 31) + 1;
+		    tmp_time.day_of_week = calculate_weekday(tmp_time.day, tmp_time.month, tmp_time.year);
+		    if (btn == BTN_MENU) menu_state = MENU_MONTH;
+		    break;
+		
+		case MENU_MONTH:
+		    if (btn == BTN_UP) tmp_time.month = (tmp_time.month % 12) + 1;
+		    if (btn == BTN_DOWN) tmp_time.month = ((tmp_time.month + 10) % 12) + 1;
+		    tmp_time.day_of_week = calculate_weekday(tmp_time.day, tmp_time.month, tmp_time.year);
+		    if (btn == BTN_MENU) menu_state = MENU_YEAR;
+		    break;
+		
+		case MENU_YEAR:
+		    if (btn == BTN_UP) tmp_time.year++;
+		    if (btn == BTN_DOWN && tmp_time.year > 2000) tmp_time.year--;
+		    tmp_time.day_of_week = calculate_weekday(tmp_time.day, tmp_time.month, tmp_time.year);
+		    if (btn == BTN_MENU) {
+		        ESP_ERROR_CHECK(ds3231_set_time(rtc, &tmp_time));
+				save_brightness(brightness_level);  // <--- save here
+		        menu_state = MENU_IDLE;
+		    }
+		    break;
+    }
+}
+
+
+
+
+
+
+static void menu_task(void *arg)
+{
+    ds3231_dev_t *rtc = (ds3231_dev_t *)arg;
+	ESP_ERROR_CHECK(ds3231_get_time(rtc, &tmp_time));
+
+    static TickType_t last_press_time[3] = {0,0,0}; // BTN_MENU, BTN_UP, BTN_DOWN
+    static button_t last_btn = -1;
+    static TickType_t repeat_time = 0;
+
+    while(1)
+    {
+        button_t btn;
+        TickType_t now = xTaskGetTickCount();
+
+        if (xQueueReceive(button_queue, &btn, pdMS_TO_TICKS(10))) 
+        {
+            // Debounce per button
+            if ((now - last_press_time[btn]) < pdMS_TO_TICKS(DEBOUNCE_MS))
+                continue;
+
+            last_press_time[btn] = now;
+            last_btn = btn;
+            repeat_time = now + pdMS_TO_TICKS(REPEAT_DELAY);
+
+            handle_menu_button(btn, rtc);
+        }
+        else
+        {
+            // Auto-repeat
+            if (last_btn != -1 && (now - last_press_time[last_btn]) >= pdMS_TO_TICKS(REPEAT_DELAY))
+            {
+                if ((now - repeat_time) >= pdMS_TO_TICKS(REPEAT_RATE))
+                {
+                    handle_menu_button(last_btn, rtc);
+                    repeat_time = now;
+                }
+            }
+        }
+
+        // Reset last_btn if all buttons released
+        if (gpio_get_level(PIN_MENU) && gpio_get_level(PIN_UP) && gpio_get_level(PIN_DOWN))
+            last_btn = -1;
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+
+
+
+
+
+
+
 static ds18b20_t sensor;
 
 static int16_t current_temp = 0;
@@ -57,7 +294,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                 snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour12, time->minute, time->second);
             }
 
-            draw_text(8, 8, buf, 255, 255, 255); // green
+            draw_text(8, 8, buf, 0, 255, 255); // green
             break;
         }
         case DISPLAY_DATE: {
@@ -103,16 +340,59 @@ void drawing_task(void *arg)
 {
     ds3231_dev_t *rtc = (ds3231_dev_t *)arg;
     display_mode_t mode = DISPLAY_TIME;
-    const int mode_interval_s = 7; // seconds per mode
+    const int mode_interval_s = 7;
 
-    while (1) {
+    while (1) 
+    {
+        clear_back_buffer();
+
+        if (menu_state != MENU_IDLE)
+        {
+            // Draw the menu
+            char buf[32];
+            switch (menu_state)
+            {
+                case MENU_BRIGHTNESS:
+                    snprintf(buf, sizeof(buf), "BRILLO:%d", brightness_level);
+                    draw_text(3, 8, buf, 255, 255, 255);
+                    break;
+                case MENU_HOUR:
+                    snprintf(buf, sizeof(buf), "HORA:%02d", tmp_time.hour);
+                    draw_text(0, 8, buf, 255, 255, 255);
+                    break;
+                case MENU_MINUTE:
+                    snprintf(buf, sizeof(buf), "MINUTO:%02d", tmp_time.minute);
+                    draw_text(0, 8, buf, 255, 255, 255);
+                    break;
+                case MENU_DAY:
+                    snprintf(buf, sizeof(buf), "DIA:%02d", tmp_time.day);
+                    draw_text(0, 8, buf, 255, 255, 255);
+                    break;
+                case MENU_MONTH:
+                    snprintf(buf, sizeof(buf), "MES:%02d", tmp_time.month);
+                    draw_text(0, 8, buf, 255, 255, 255);
+                    break;
+                case MENU_YEAR:
+                    snprintf(buf, sizeof(buf), "YEAR:%04d", tmp_time.year);
+                    draw_text(0, 8, buf, 255, 255, 255);
+                    break;
+                default: break;
+            }
+
+            swap_buffers();
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue; // skip normal display
+        }
+
+        // Menu not active → normal display
         ds3231_time_t now;
         ESP_ERROR_CHECK(ds3231_get_time(rtc, &now));
 
-        switch (mode) {
+        switch (mode) 
+        {
             case DISPLAY_TIME:
-                // update every second
-                for (int i = 0; i < mode_interval_s; i++) {
+                for (int i = 0; i < mode_interval_s; i++) 
+                {
                     ESP_ERROR_CHECK(ds3231_get_time(rtc, &now));
                     draw_display(DISPLAY_TIME, &now);
                     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -121,30 +401,34 @@ void drawing_task(void *arg)
 
             case DISPLAY_DATE:
                 draw_display(DISPLAY_DATE, &now);
-                //vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 1000));
                 break;
 
             case DISPLAY_TEMPERATURE:
                 draw_display(DISPLAY_TEMPERATURE, &now);
                 vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 500));
                 break;
+
             case DISPLAY_LOGO:
                 draw_display(DISPLAY_LOGO, &now);
                 vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
                 break;
+
             case DISPLAY_LOGO2:
                 draw_display(DISPLAY_LOGO2, &now);
                 vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
                 break;
+
             case DISPLAY_LOGO3:
                 draw_display(DISPLAY_LOGO3, &now);
                 vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
                 break;
         }
-        mode++; // switch to next mode
+
+        mode++;
         if (mode > DISPLAY_LOGO3) mode = DISPLAY_TIME;
     }
 }
+
 
 // ---------------- example usage in app_main ----------------
 void app_main(void)
@@ -152,7 +436,12 @@ void app_main(void)
     init_pins();
 
 	init_oe_pwm();           // initialize OE PWM
-	set_global_brightness(100);  // 50% brightness
+	//set_global_brightness(100);  // 50% brightness
+
+	init_nvs_brightness();
+	brightness_level = load_brightness();
+	set_global_brightness(brightness_level * 10);
+
 
     ds3231_dev_t rtc;
     ESP_ERROR_CHECK(init_ds3231(&rtc));
@@ -180,6 +469,10 @@ void app_main(void)
 	xTaskCreatePinnedToCore(drawing_task, "DrawTime", 4096, &rtc, 1, NULL, 1);
 	
 	xTaskCreatePinnedToCore(temp_task,      "TempTask",      1024, NULL, 2, NULL, 1);
+
+init_buttons();
+xTaskCreatePinnedToCore(menu_task, "MenuTask", 4096, &rtc, 2, NULL, 1);
+
 
     while (true) 
 	{

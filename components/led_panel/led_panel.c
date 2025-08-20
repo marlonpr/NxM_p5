@@ -124,7 +124,7 @@ void swap_buffers(void) {
 // phys_x = phys_panel_index * PANEL_WIDTH + (x % PANEL_WIDTH)
 // phys_y = y % PANEL_HEIGHT
 //
-static inline void set_pixel(int x, int y, int r8, int g8, int b8) {
+void set_pixel(int x, int y, int r8, int g8, int b8) {
     if ((unsigned)x >= (unsigned)VIRT_WIDTH || (unsigned)y >= (unsigned)VIRT_HEIGHT) return;
 
     // same mapping as your code:

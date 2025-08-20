@@ -91,3 +91,5 @@ void init_planes(void);
 void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h);
 void set_global_brightness_pct(uint8_t percent);
 
+void set_pixel(int x, int y, int r8, int g8, int b8);
+
