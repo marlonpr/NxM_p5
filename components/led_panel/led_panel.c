@@ -2,35 +2,29 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "font20x40.h"
-
-
-
-
 #include "soc/gpio_struct.h"  // for GPIO register access
 
-// Precalculate bitmasks for speed
-#define BIT_R1 (1 << PIN_R1)
-#define BIT_G1 (1 << PIN_G1)
-#define BIT_B1 (1 << PIN_B1)
-#define BIT_R2 (1 << PIN_R2)
-#define BIT_G2 (1 << PIN_G2)
-#define BIT_B2 (1 << PIN_B2)
+// Gamma corrected values for 3-bit PWM (0..7)
+const uint8_t gamma_table[256] = {
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+    2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,
+    3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,
+    4,4,4,4,5,5,5,5,5,5,5,5,6,6,6,6,
+    6,6,6,6,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
+};
 
-#define BIT_A  (1 << PIN_A)
-#define BIT_B  (1 << PIN_B)
-#define BIT_C  (1 << PIN_C)
-
-#define BIT_CLK (1 << PIN_CLK)
-#define BIT_LAT (1 << PIN_LAT)
-#define BIT_OE (1 << PIN_OE)
-
-
-#define OE_DUTY_RES       LEDC_TIMER_6_BIT      // 6-bit PWM
-#define OE_MAX_DUTY       ((1 << OE_DUTY_RES)-1)  // 63
-#define OE_FREQ_HZ        1000000               // 1 MHz safe for 6-bit
-#define OE_SPEED_MODE     LEDC_HIGH_SPEED_MODE
-#define OE_CHANNEL        LEDC_CHANNEL_0
-
+//--------------------------------------------------------------------------------------------------------------
 static volatile uint8_t global_brightness = 100;  // 0..100%
 
 // Initialize OE PWM
@@ -75,31 +69,7 @@ void set_global_brightness(uint8_t percent)
     global_brightness = percent;
     update_oe_duty();
 }
-
-
-
-
-
-// Gamma corrected values for 3-bit PWM (0..7)
-const uint8_t gamma_table[256] = {
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-    2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,
-    3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,
-    4,4,4,4,5,5,5,5,5,5,5,5,6,6,6,6,
-    6,6,6,6,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
-};
-
+//--------------------------------------------------------------------------------------------------------------
 
 void init_planes(void) {
     for (int p = 0; p < COLOR_DEPTH; ++p) {
@@ -202,16 +172,9 @@ void refresh_task(void *arg) {
             for (int row = 0; row < scan_rows; row++) {
 
                 // OE off while we change address / shift
-                //GPIO.out_w1ts = BIT_OE;
-
-
-				//gpio_set_level(PIN_OE, 1);
 				// Duty = max → PWM is always HIGH → OE stays HIGH → panel off
 				ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, 0);
 				ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
-
-
-
 
                 // Set row address ABC
                 uint32_t set_mask = 0, clr_mask = 0;
@@ -262,30 +225,16 @@ void refresh_task(void *arg) {
                 GPIO.out_w1ts = BIT_LAT;
                 GPIO.out_w1tc = BIT_LAT;
 
-                // Enable for weighted time slice
-                //GPIO.out_w1tc = BIT_OE;           // OE low = on
-
-				//gpio_set_level(PIN_OE, 0);
 				// Duty = 0 → PWM is always LOW → OE stays LOW → panel on
-				//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, (1 << OE_DUTY_RES) - 1);
-				//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
 				update_oe_duty();
 
-
-
-
-
-
-                for (int t = 0; t < weight; ++t) {
+                for (int t = 0; t < weight; ++t) { // Enable for weighted time slice
                     esp_rom_delay_us(BASE_US);    // very short unit, e.g. 20 µs
                 }
             }
         }
     }
 }
-
-
-
 
 // set_pixel(x, y, r, g, b) is your existing function
 // VIRT_WIDTH, VIRT_HEIGHT are the virtual drawing dimensions
@@ -364,23 +313,3 @@ void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h) {
 }
 
 
-
-
-//---------------------------------------------//-------------------------------------------
-
-
-    		
-			//gpio_set_level(PIN_OE, 1);
-			// Duty = max → PWM is always HIGH → OE stays HIGH → panel off
-			//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, 0);
-			//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
-            
-			//esp_rom_delay_us(5);
-
-
-
-			//gpio_set_level(PIN_OE, 0);
-			// Duty = 0 → PWM is always LOW → OE stays LOW → panel on
-			//ledc_set_duty(OE_SPEED_MODE, OE_CHANNEL, (1 << OE_DUTY_RES) - 1);
-			//ledc_update_duty(OE_SPEED_MODE, OE_CHANNEL);
-			//update_oe_duty();

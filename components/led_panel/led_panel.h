@@ -3,7 +3,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-
 // ------------ CONFIG: panel + layout ------------
 #define PANEL_WIDTH    64
 #define PANEL_HEIGHT   32    // must be divisible by 4 (1/4 scan)
@@ -33,19 +32,28 @@
 #define PIN_B   GPIO_NUM_26
 #define PIN_C   GPIO_NUM_23
 
+// Precalculate bitmasks for speed
+#define BIT_R1 (1 << PIN_R1)
+#define BIT_G1 (1 << PIN_G1)
+#define BIT_B1 (1 << PIN_B1)
+#define BIT_R2 (1 << PIN_R2)
+#define BIT_G2 (1 << PIN_G2)
+#define BIT_B2 (1 << PIN_B2)
 
+#define BIT_A  (1 << PIN_A)
+#define BIT_B  (1 << PIN_B)
+#define BIT_C  (1 << PIN_C)
 
+#define BIT_CLK (1 << PIN_CLK)
+#define BIT_LAT (1 << PIN_LAT)
+#define BIT_OE (1 << PIN_OE)
 
-// ------------ Pixel + double buffers -------------
-// Packed RGB: bit0=R, bit1=G, bit2=B
-typedef uint8_t pix_t;
-
-// Two physical-layout framebuffers: [y][x] = 32 x (64*PHYS_PANELS)
-//static pix_t fbA[PHY_HEIGHT][PHY_WIDTH];
-//static pix_t fbB[PHY_HEIGHT][PHY_WIDTH];
-
-//static volatile pix_t (*front_buf)[PHY_WIDTH] = fbA; // scanned by refresh task
-//static volatile pix_t (*back_buf)[PHY_WIDTH]  = fbB; // drawn by your code
+//LEDC
+#define OE_DUTY_RES       LEDC_TIMER_6_BIT      // 6-bit PWM
+#define OE_MAX_DUTY       ((1 << OE_DUTY_RES)-1)  // 63
+#define OE_FREQ_HZ        1000000               // 1 MHz safe for 6-bit
+#define OE_SPEED_MODE     LEDC_HIGH_SPEED_MODE
+#define OE_CHANNEL        LEDC_CHANNEL_0
 
 // ===== Brightness / PWM config =====
 #define COLOR_DEPTH   3              // 3 bits per color (0..7). You can try 4 later.
@@ -77,22 +85,9 @@ void refresh_task(void *arg);
 void clear_back_buffer(void);
 void swap_buffers(void);
 void draw_text(int x, int y, const char *s, int r, int g, int b);
-//void scroll_text_update(scroll_text_t *scroll);
-
 void scroll_text(const char *text, int y, int r, int g, int b, int speed_ms);
-
-
 void draw_char(int x, int y, char c, int r, int g, int b);
-
-
 void init_planes(void);
-
 void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h);
-
-
-
 void set_global_brightness_pct(uint8_t percent);
-
-
-
 

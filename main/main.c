@@ -22,8 +22,6 @@ void temp_task(void *arg)
     }
 }
 
-
-
 typedef enum {
     DISPLAY_TIME = 0,
     DISPLAY_DATE,
@@ -46,7 +44,6 @@ const char *meses[] = {
 void draw_display(display_mode_t mode, ds3231_time_t *time)
 {
     clear_back_buffer();
-
     switch (mode) {
         case DISPLAY_TIME: {
             // 12-hour time with left digit off if zero
@@ -60,7 +57,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                 snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour12, time->minute, time->second);
             }
 
-            draw_text(8, 8, buf, 180, 0, 115); // green
+            draw_text(8, 8, buf, 255, 255, 255); // green
             break;
         }
         case DISPLAY_DATE: {
@@ -73,7 +70,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                      meses[time->month - 1],
                      time->year);
 
-			scroll_text(buf, 8, 0, 255, 255, 15);
+			scroll_text(buf, 8, 255, 255, 0, 15);
             break;
         }
 		case DISPLAY_TEMPERATURE: {
@@ -83,7 +80,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
 		    } else {
 		        snprintf(buf, sizeof(buf), "TEMP ERROR");
 		    }
-		    draw_text(66, 8, buf, 147, 47, 103);
+		    draw_text(66, 8, buf, 0, 255, 255);
 		    break;
 		}
 		case DISPLAY_LOGO: {
@@ -98,9 +95,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
 			draw_bitmap_rgb(64,16,logo3_bitmap, LOGO_WIDTH, LOGO_HEIGHT);
 			break;
 		}
-
     }
-
     swap_buffers();
 }
 
@@ -108,7 +103,7 @@ void drawing_task(void *arg)
 {
     ds3231_dev_t *rtc = (ds3231_dev_t *)arg;
     display_mode_t mode = DISPLAY_TIME;
-    const int mode_interval_s = 50; // seconds per mode
+    const int mode_interval_s = 7; // seconds per mode
 
     while (1) {
         ds3231_time_t now;
@@ -135,36 +130,29 @@ void drawing_task(void *arg)
                 break;
             case DISPLAY_LOGO:
                 draw_display(DISPLAY_LOGO, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
                 break;
             case DISPLAY_LOGO2:
                 draw_display(DISPLAY_LOGO2, &now);
-                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
+                vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 200));
                 break;
             case DISPLAY_LOGO3:
                 draw_display(DISPLAY_LOGO3, &now);
                 vTaskDelay(pdMS_TO_TICKS(mode_interval_s * 300));
                 break;
         }
-
-
-        // switch to next mode
-        mode++;
+        mode++; // switch to next mode
         if (mode > DISPLAY_LOGO3) mode = DISPLAY_TIME;
     }
 }
-
-
-
 
 // ---------------- example usage in app_main ----------------
 void app_main(void)
 {
     init_pins();
 
-init_oe_pwm();           // initialize OE PWM
-set_global_brightness(100);  // 50% brightness
-
+	init_oe_pwm();           // initialize OE PWM
+	set_global_brightness(100);  // 50% brightness
 
     ds3231_dev_t rtc;
     ESP_ERROR_CHECK(init_ds3231(&rtc));
@@ -193,12 +181,10 @@ set_global_brightness(100);  // 50% brightness
 	
 	xTaskCreatePinnedToCore(temp_task,      "TempTask",      1024, NULL, 2, NULL, 1);
 
-
     while (true) 
 	{
         vTaskDelay(pdMS_TO_TICKS(1));
 
     }
 }
-
 
