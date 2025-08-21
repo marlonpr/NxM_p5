@@ -59,6 +59,15 @@
 #define COLOR_DEPTH   3              // 3 bits per color (0..7). You can try 4 later.
 #define BASE_US       30             // base OE time per LSB slice (tune 15–30us)
 
+//buttons
+#define PIN_MENU    GPIO_NUM_33
+#define PIN_UP      GPIO_NUM_32
+#define PIN_DOWN    GPIO_NUM_16
+
+#define DEBOUNCE_MS    500      // minimum time between presses
+#define REPEAT_DELAY   500     // initial delay before repeating
+#define REPEAT_RATE    500    // repeat interval while holding
+
 
 // Plane buffers: same physical size, but one per PWM plane
 // Each cell packs R,G,B bits like your old buffer: bit0=R, bit1=G, bit2=B
@@ -95,4 +104,8 @@ void draw_bitmap_rgb(int x0, int y0, const uint32_t *bmp, int w, int h);
 void set_global_brightness_pct(uint8_t percent);
 
 void set_pixel(int x, int y, int r8, int g8, int b8);
+
+void init_nvs_brightness();
+void save_brightness(uint8_t level);
+uint8_t load_brightness();
 

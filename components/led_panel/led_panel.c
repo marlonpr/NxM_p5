@@ -3,6 +3,9 @@
 #include "driver/ledc.h"
 #include "font20x40.h"
 #include "soc/gpio_struct.h"  // for GPIO register access
+#include "nvs_flash.h"
+#include "nvs.h"
+
 
 // Gamma corrected values for 3-bit PWM (0..7)
 const uint8_t gamma_table[256] = {
@@ -23,6 +26,50 @@ const uint8_t gamma_table[256] = {
     7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
     7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7
 };
+
+
+
+
+//--------------------------------------------NVS-------------------------------------------------------
+
+void init_nvs_brightness()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+}
+
+void save_brightness(uint8_t level)
+{
+    nvs_handle_t nvs_handle;
+    ESP_ERROR_CHECK(nvs_open("settings", NVS_READWRITE, &nvs_handle));
+    ESP_ERROR_CHECK(nvs_set_u8(nvs_handle, "brightness", level));
+    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
+    nvs_close(nvs_handle);
+}
+
+uint8_t load_brightness()
+{
+    nvs_handle_t nvs_handle;
+    uint8_t level = 10; // default 10 if not set
+
+    if (nvs_open("settings", NVS_READONLY, &nvs_handle) == ESP_OK) {
+        nvs_get_u8(nvs_handle, "brightness", &level);
+        nvs_close(nvs_handle);
+    }
+
+    return level;
+}
+
+
+
+
+
+
+
 
 //--------------------------------------------------------------------------------------------------------------
 static volatile uint8_t global_brightness = 100;  // 0..100%

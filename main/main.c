@@ -2,57 +2,18 @@
 #include "led_panel.h"
 #include "ds3231.h"
 #include "logo.h"
-
 #include "freertos/queue.h"
-#include "driver/gpio.h"
+#include "esp_timer.h"
 
-#define DEBOUNCE_MS    500      // minimum time between presses
-#define REPEAT_DELAY   500     // initial delay before repeating
-#define REPEAT_RATE    500    // repeat interval while holding
+#define MENU_TIMEOUT_US   (10 * 1000000)  // 10 seconds
 
+static int menu_active = 0;
+static int64_t last_button_time = 0;
 
-#define PIN_MENU    GPIO_NUM_33
-#define PIN_UP      GPIO_NUM_32
-#define PIN_DOWN    GPIO_NUM_16
-
-#include "nvs_flash.h"
-#include "nvs.h"
 
 bool stop_flag = false;
 
 
-
-void init_nvs_brightness()
-{
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-}
-
-void save_brightness(uint8_t level)
-{
-    nvs_handle_t nvs_handle;
-    ESP_ERROR_CHECK(nvs_open("settings", NVS_READWRITE, &nvs_handle));
-    ESP_ERROR_CHECK(nvs_set_u8(nvs_handle, "brightness", level));
-    ESP_ERROR_CHECK(nvs_commit(nvs_handle));
-    nvs_close(nvs_handle);
-}
-
-uint8_t load_brightness()
-{
-    nvs_handle_t nvs_handle;
-    uint8_t level = 10; // default 10 if not set
-
-    if (nvs_open("settings", NVS_READONLY, &nvs_handle) == ESP_OK) {
-        nvs_get_u8(nvs_handle, "brightness", &level);
-        nvs_close(nvs_handle);
-    }
-
-    return level;
-}
 
 
 // Return 1=Sunday ... 7=Saturday to match DS3231
@@ -72,7 +33,6 @@ static int calculate_weekday(int day, int month, int year)
 
 
 
-volatile bool menu_active = false;
 
 
 typedef enum {
@@ -85,7 +45,8 @@ static QueueHandle_t button_queue;
 
 static void IRAM_ATTR button_isr_handler(void* arg)
 {
-    button_t btn = (button_t)(uint32_t)arg;
+    last_button_time = esp_timer_get_time();  // refresh timeout
+	button_t btn = (button_t)(uint32_t)arg;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     xQueueSendFromISR(button_queue, &btn, &xHigherPriorityTaskWoken);
     if (xHigherPriorityTaskWoken) portYIELD_FROM_ISR();
@@ -139,6 +100,9 @@ static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
             if (btn == BTN_MENU) {
 				menu_state = MENU_BRIGHTNESS;
 				stop_flag = true;
+			    menu_active = 1;
+			    last_button_time = esp_timer_get_time();  // start inactivity timer
+			    printf("Menu entered\n");
 			}
             break;
 
@@ -180,7 +144,8 @@ static void handle_menu_button(button_t btn, ds3231_dev_t *rtc)
 		    if (btn == BTN_DOWN && tmp_time.year > 2000) tmp_time.year--;
 		    tmp_time.day_of_week = calculate_weekday(tmp_time.day, tmp_time.month, tmp_time.year);
 		    if (btn == BTN_MENU) {
-		        ESP_ERROR_CHECK(ds3231_set_time(rtc, &tmp_time));
+		        tmp_time.second = 0;
+				ESP_ERROR_CHECK(ds3231_set_time(rtc, &tmp_time));
 				save_brightness(brightness_level);  // <--- save here
 		        menu_state = MENU_IDLE;
 				stop_flag = false;
@@ -237,7 +202,18 @@ static void menu_task(void *arg)
         if (gpio_get_level(PIN_MENU) && gpio_get_level(PIN_UP) && gpio_get_level(PIN_DOWN))
             last_btn = -1;
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        //vTaskDelay(pdMS_TO_TICKS(10));
+
+        if (menu_active) {
+            int64_t now = esp_timer_get_time();
+            if (now - last_button_time > MENU_TIMEOUT_US) {
+                menu_active = 0;  // auto-exit
+                printf("Menu timeout -> exiting\n");
+				menu_state = MENU_IDLE;
+				stop_flag = false;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(200));  // check every 200 ms
     }
 }
 
@@ -315,7 +291,7 @@ void draw_display(display_mode_t mode, ds3231_time_t *time)
                      meses[time->month - 1],
                      time->year);
 
-			scroll_text(buf, 8, 255, 255, 0, 15);
+			scroll_text(buf, 8, 255, 0, 255, 15);
             break;
         }
 		case DISPLAY_TEMPERATURE: {
@@ -381,7 +357,7 @@ void drawing_task(void *arg)
                     draw_text(15, 8, buf, 255, 0, 0);
                     break;
                 case MENU_YEAR:
-                    snprintf(buf, sizeof(buf), "A:%04d", tmp_time.year);
+                    snprintf(buf, sizeof(buf), "A|O:%04d", tmp_time.year);
                     draw_text(8, 8, buf, 255, 0, 0);
                     break;
                 default: break;
